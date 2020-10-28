@@ -40,9 +40,10 @@ using namespace cv;
 //paramates
 #define cameraWidth 1280
 #define cameraHeight 720
-//#define inFps 25
 #define outFps 5
 #define inputRtsp "rtsp://admin:kuangping108@192.168.1.64/h264/ch1/main/av_stream"
+#define RTSP_PORT "8554"
+#define index "0"
 
 
 static pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER; //创建互斥进程
@@ -77,14 +78,11 @@ int counter = 0;
 //两个线程之间共享的帧：  
 Mat frameimage;    
 
-
-
-
 void processing( Mat frame )
 {
     Rect rect(200, 200, 300, 300);//左上坐标（x,y）和矩形的长(x)宽(y)
     cv::rectangle(frame, rect, Scalar(255, 0, 0),1, 1, 0);
-    cv::putText(frame, "example of image-processing on frames", cv::Point(200, 200), CV_FONT_HERSHEY_PLAIN, 1, cv::Scalar(255, 255, 255));
+    cv::putText(frame, "example of image-processing", cv::Point(200, 200), CV_FONT_HERSHEY_PLAIN, 1, cv::Scalar(255, 255, 255));
 }
 
 /*
@@ -106,15 +104,9 @@ static void need_data (GstElement * appsrc, guint unused, MyContext * ctx){
     counter++;
     //m.lock();
     pthread_mutex_lock( &m ); 
-        //设置分辨率
-        resize(frameimage,frameimage,Size(cameraWidth, cameraHeight),0,0,INTER_AREA);
-
-        /* image processing */
-        processing( frameimage );
-
         /* allocate buffer */ 
         buffersize = frameimage.cols * frameimage.rows * frameimage.channels();
-        cout<<"frameimage.cols:"<<frameimage.cols <<"  frameimage.rows:"<<frameimage.rows << "  frameimage.channels:" << frameimage.channels()<<endl;
+        //cout<<"frameimage.cols:"<<frameimage.cols <<"  frameimage.rows:"<<frameimage.rows << "  frameimage.channels:" << frameimage.channels()<<endl;
         buffer = gst_buffer_new_and_alloc(buffersize);
         uchar *  IMG_data = frameimage.data;
     //m.unlock();
@@ -135,7 +127,7 @@ static void need_data (GstElement * appsrc, guint unused, MyContext * ctx){
     GST_BUFFER_DURATION (buffer) = gst_util_uint64_scale_int (1, GST_SECOND, outFps);
     ctx->timestamp += GST_BUFFER_DURATION (buffer);
 
-    std::cout<<"GST_BUFFER_DURATION (buffer):"<<GST_BUFFER_DURATION (buffer)<<std::endl;
+    //std::cout<<"GST_BUFFER_DURATION (buffer):"<<GST_BUFFER_DURATION (buffer)<<std::endl;
 
     //有足够的数据提供给appsrc：
     g_signal_emit_by_name (appsrc, "push-buffer", buffer, &ret);     
@@ -168,7 +160,7 @@ media_configure (GstRTSPMediaFactory * factory, GstRTSPMedia * media,
   // g_object_set (G_OBJECT (appsrc), "is-live" , TRUE ,  NULL);
   // g_object_set (G_OBJECT (appsrc), "min-latency" , 67000000 ,  NULL);  
   g_object_set (G_OBJECT (appsrc), 
-    "stream-type" , 0 ,
+    "stream-type" , 0 , //rtsp
     "format" , GST_FORMAT_TIME , NULL);
   
 
@@ -217,11 +209,11 @@ media_configure (GstRTSPMediaFactory * factory, GstRTSPMedia * media,
 
 
 /*****
- thread2: 推流
+ thread2: push stream
  */
 void *thread2new(void *arg){
 
-    App * app = &s_app; //gstramer数据结构
+    App * app = &s_app;
     GstCaps * caps2;  
     GstCaps * caps3;
     GstFlowReturn ret;
@@ -235,6 +227,7 @@ void *thread2new(void *arg){
     gst_init (NULL,NULL);
     loop = g_main_loop_new (NULL, FALSE);
     server = gst_rtsp_server_new ();
+    g_object_set (server, "service", RTSP_PORT, NULL);
     mounts = gst_rtsp_server_get_mount_points (server);
     factory = gst_rtsp_media_factory_new ();
 
@@ -259,9 +252,10 @@ void *thread2new(void *arg){
     //g_signal_connect (app->videosrc, "need-data", G_CALLBACK (start_feed), app);
     //g_signal_connect (app->videosrc, "enough-data", G_CALLBACK (stop_feed),app);
    
-    
+    char index_url[16] = {0};
     /* attach the test factory to the /test url */
-    gst_rtsp_mount_points_add_factory (mounts, "/test", factory);
+    sprintf(index_url, "/index/%s", index);
+    gst_rtsp_mount_points_add_factory (mounts, index_url, factory);
 
     /* don't need the ref to the mounts anymore */
     g_object_unref (mounts);
@@ -270,14 +264,14 @@ void *thread2new(void *arg){
     gst_rtsp_server_attach (server, NULL);
 
     /* start serving */
-    g_print ("stream ready at rtsp://127.0.0.1:8554/test\n");
+    g_print ("stream ready at rtsp://127.0.0.1:%s%s\n",RTSP_PORT,index_url);
     g_main_loop_run (loop);
 
     pthread_exit(NULL);
 }
 
 /*****
- thread1: 拉流
+ thread1: fetch stream
  */
 void *thread1(void *arg){
     VideoCapture cap(inputRtsp);
@@ -294,17 +288,13 @@ void *thread1(void *arg){
         cap.read(tempframe);
         pthread_mutex_lock( &m ); 
                 frameimage = tempframe;
-                
-/*
-速度比较：INTER_NEAREST（最近邻插值)>INTER_LINEAR(线性插值)>INTER_CUBIC(三次样条插值)>INTER_AREA  (区域插值)
-对图像进行缩小时，为了避免出现波纹现象，推荐采用INTER_AREA 区域插值方法。
-OpenCV推荐：如果要缩小图像，通常推荐使用#INTER_AREA插值效果最好，而要放大图像，通常使用INTER_CUBIC(速度较慢，但效果最好)，或者使用INTER_LINEAR(速度较快，效果还可以)。至于最近邻插值INTER_NEAREST，一般不推荐使用
-*/
-                // cv::cvtColor(frameimage, frameimage, cv::COLOR_BGR2RGB);
-                // namedWindow("Example1",WINDOW_AUTOSIZE);
-                // imshow("Example1",frameimage);
-                // waitKey(0);
-                // destroyWindow("Example1");
+                //resize frames. Speed comparison:INTER_NEAREST、INTER_LINEAR>INTER_CUBIC>INTER_AREA
+                //缩小图像，避免出现波纹现象通常使用#INTER_AREA；放大图像通常使用INTER_CUBIC(速度较慢，但效果最好)，或INTER_LINEAR(速度较快，效果还可以)。INTER_NEAREST，一般不推荐
+                resize(frameimage,frameimage,Size(cameraWidth, cameraHeight),0,0,INTER_AREA);
+
+                /* frame image processing */
+                processing( frameimage );
+
         pthread_mutex_unlock( &m );
     }
     pthread_exit(NULL);    
