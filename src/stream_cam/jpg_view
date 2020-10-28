@@ -1,0 +1,3 @@
+
+gst-launch-1.0 rtspsrc location=rtsp://127.0.0.1:8554/test latency=10 ! rtpjpegdepay ! jpegdec ! videoconvert ! ximagesink
+#gst-launch-1.0 rtspsrc location=rtsp://192.168.1.108:8554/test latency=10 ! rtpjpegdepay ! jpegdec ! videoconvert ! ximagesink

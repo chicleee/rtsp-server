@@ -1,0 +1,30 @@
+
+Pipeline: 
+	appsrc -> videoconvert -> capsfilter -> encoder (x264enc, jpegenc) -> rtppay (rtph264pay, rtpjpegpay) -> udpsink / rtsp
+
+
+compile:
+	- stream_udp :	
+	  g++ -std=c++11 stream_udp.cpp firedetection.cpp -o udp -lpthread -lgstapp-1.0 `pkg-config --libs --cflags opencv gstreamer-1.0`
+	
+	- stream_rtsp :
+	  g++ -std=c++11 stream_rtsp.cpp firedetection.cpp -o rtsp -lpthread -lgstapp-1.0 `pkg-config --libs --cflags opencv gstreamer-1.0 gstreamer-rtsp-server-1.0`	
+
+
+
+viewer stream:
+	- stream_udp:
+	jpegenc: gst-launch-1.0 udpsrc port=5000 ! application/x-rtp, encoding-name=JPEG, payload=26 ! rtpjpegdepay ! jpegdec ! videoconvert ! autovideosink
+	x264enc: gst-launch-1.0 udpsrc port=5000 ! application/x-rtp, encoding-name=H264, payload=26 ! rtph264depay ! avdec_h264 ! videoconvert ! autovideosink
+
+	- stream_rtsp:
+	jpegenc: gst-launch-1.0 rtspsrc location=rtsp://127.0.0.1:8554/test latency=10 ! rtpjpegdepay ! jpegdec ! videoconvert ! autovideosink
+	x264enc: gst-launch-1.0 rtspsrc location=rtsp://127.0.0.1:8554/test latency=10 ! rtph264depay ! avdec_h264 ! videoconvert ! autovideosink
+	vlc: vlc rtsp://127.0.0.1:8554/test
+	gst-launch-1.0 rtspsrc location=rtsp://127.0.0.1:8554/test latency=10 ! decodebin ! autovideosink
+
+	(stream tcp) gst-launch-1.0 tcpclientsrc host=127.0.0.1 port=5000 ! gdpdepay ! rtpjpegdepay ! jpegdec ! videoconvert ! autovideosink
+
+
+
+

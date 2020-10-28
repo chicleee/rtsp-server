@@ -1,0 +1,1 @@
+g++ -std=c++11 stream_rtsp.cpp firedetection.cpp -o rtsp_JPG -lpthread -lgstapp-1.0 `pkg-config --libs --cflags opencv gstreamer-1.0 gstreamer-rtsp-server-1.0`
