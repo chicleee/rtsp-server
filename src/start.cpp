@@ -1,7 +1,6 @@
-//compile: g++ -std=c++11 cmdinput.cpp -o cmdinput -lpthread -lgstapp-1.0 `pkg-config --libs --cflags opencv gstreamer-1.0 gstreamer-rtsp-server-1.0`
-//cmd :    ./cmdinput "0" "rtsp://admin:kuangping108@192.168.1.64/h264/ch1/main/av_stream" 1280 720 1 "10000"
-//view: gst-launch-1.0 rtspsrc location=rtsp://127.0.0.1:10000/index/0 latency=10 ! rtph264depay ! avdec_h264 ! videoconvert ! autovideosink
-//vlc rtsp://127.0.0.1:10000/index/0
+//compile: g++ -std=c++11 start.cpp -o mutiprocess -lboost_system -lboost_filesystem -lpthread -lgstapp-1.0 `pkg-config --libs --cflags opencv gstreamer-1.0 gstreamer-rtsp-server-1.0`
+//view: gst-launch-1.0 rtspsrc location=rtsp://127.0.0.1:8554/test latency=10 ! rtph264depay ! avdec_h264 ! videoconvert ! autovideosink
+//vlc rtsp://127.0.0.1:8554/test
 
 #include <iostream>
 #include <sys/stat.h>
@@ -23,15 +22,17 @@
 #include <glib.h>
 #include <pthread.h>
 #include <stdlib.h>
+//compile : g++ -o start start.cpp -lboost_system -lboost_filesystem
 
-// //config
-// #include <boost/filesystem.hpp>
-// #include <boost/filesystem/fstream.hpp>
-// #include <boost/property_tree/ini_parser.hpp>
-// #include <boost/property_tree/ptree.hpp>
+#include <boost/filesystem.hpp>
+#include <boost/filesystem/fstream.hpp>
+#include <boost/property_tree/ini_parser.hpp>
+#include <boost/property_tree/ptree.hpp>
+#include <iostream>
 
 #include <ctime>
-
+#include <wait.h>//wait functionwait：父进程等待子进程结束，并销毁子进程，如果父进程不调用wait函数，子进程就会一直留在linux内核中，变成了僵尸进程。
+#include <signal.h>
 // #include <stdio.h>
 // #include <unistd.h>
 // #include <vector>
@@ -127,7 +128,7 @@ void processing( Mat frame )
 
 static void need_data (GstElement * appsrc, guint unused, MyContext * ctx){
 
-    //cvNamedWindow( "iplimage", CV_WINDOW_AUTOSIZE );
+    //cvNamedWindow( "iplimage", WINDOW_AUTOSIZE );
     //static GstClockTime timestamp = 0;
     GstBuffer *buffer;
     guint buffersize;
@@ -279,8 +280,20 @@ void *thread2new(void *arg){
     server = gst_rtsp_server_new ();
     g_object_set (server, "service", p.out_port.c_str(), NULL);
     mounts = gst_rtsp_server_get_mount_points (server);
-
     factory = gst_rtsp_media_factory_new ();
+
+/*    gst_rtsp_media_factory_set_launch (factory,
+      "( appsrc name=mysrc ! videoconvert ! capsfilter caps=video/x-raw,format=I420,width=640,height=480,framerate=15/1,pixel-aspect-ratio=1/1 ! x264enc noise-reduction=10000 tune=zerolatency ! rtph264pay config-interval=1 name=pay0 pt=96 )");
+*/
+/*
+  gst_rtsp_media_factory_set_launch (factory,
+      "( appsrc name=mysrc ! videoconvert ! capsfilter caps=video/x-raw,format=I420,width=640,height=480,framerate=15/1,pixel-aspect-ratio=1/1 ! jpegenc tune=zerolatency ! rtpjpegpay name=pay0 pt=96 )");*/
+
+/*    gst_rtsp_media_factory_set_launch (factory,
+      "( appsrc name=mysrc ! videoconvert ! capsfilter caps=video/x-raw,format=RGB,width=1920,height=1080,framerate=25/1,pixel-aspect-ratio=1/1 ! tee name=\"local\" ! queue ! ximagesink local. ! queue ! x264enc noise-reduction=10000 tune=zerolatency ! rtph264pay config-interval=1 name=pay0 pt=96 )");
+*/
+/*  gst_rtsp_media_factory_set_launch (factory,
+      "( v4l2src ! video/x-raw,width=640,height=480 ! timeoverlay ! tee name=\"local\" ! queue ! autovideosink local. ! queue ! jpegenc ! rtpjpegpay name=pay0 pt=96 )");*/
     char *outAppsrc = new char[200];
     sprintf(outAppsrc, "( appsrc name=mysrc is-live=true block=true format=GST_FORMAT_TIME caps=video/x-raw,format=BGR,width=%d,height=%d,framerate=%d/1 ! videoconvert ! video/x-raw,format=I420 ! x264enc speed-preset=ultrafast tune=zerolatency ! rtph264pay config-interval=1 name=pay0 pt=96 )",
       int(p.out_width), int(p.out_height), int(p.out_fps));
@@ -294,18 +307,19 @@ void *thread2new(void *arg){
     /* attach the test factory to the /test url */
     sprintf(index_url, "/index/%s", p.INDEX.c_str());
     gst_rtsp_mount_points_add_factory (mounts, index_url, factory);
-    g_print ("stream ready at rtsp://127.0.0.1:%s%s\n",p.out_port.c_str(),index_url);
-
 
     /* don't need the ref to the mounts anymore */
     g_object_unref (mounts);
+
     /* attach the server to the default maincontext */
     gst_rtsp_server_attach (server, NULL);
+
     /* start serving */
+    g_print ("stream ready at rtsp://127.0.0.1:%s%s\n",p.out_port.c_str(),index_url);
     g_main_loop_run (loop);
+
     pthread_exit(NULL);
 }
-
 /*****
  thread1: fetch stream
  */
@@ -317,28 +331,22 @@ void *thread1(void *arg){
     if (!cap.isOpened()) {
         throw "Error when reading steam from camera";
     }
-    int width = cap.get(CAP_PROP_FRAME_WIDTH);
-    int height = cap.get(CAP_PROP_FRAME_HEIGHT);
-    int frameRate = cap.get(CAP_PROP_FPS);
-    int totalFrames = cap.get(CAP_PROP_FRAME_COUNT);
+    // int width = cap.get(CAP_PROP_FRAME_WIDTH);
+    // int height = cap.get(CAP_PROP_FRAME_HEIGHT);
+    // int frameRate = cap.get(CAP_PROP_FPS);
+    // int totalFrames = cap.get(CAP_PROP_FRAME_COUNT);
 
-    cout<<"input_width="<<width<<endl;
-    cout<<"input_width="<<height<<endl;
-    cout<<"input_total_frames="<<totalFrames<<endl;
-    cout<<"input_fps="<<frameRate<<endl;
-    // cap.set(CV_CAP_PROP_FRAME_WIDTH, p.out_width);
-    // cap.set(CV_CAP_PROP_FRAME_HEIGHT, p.out_height);
+    // cout<<"input_width="<<width<<endl;
+    // cout<<"input_width="<<height<<endl;
+    // cout<<"input_total_frames="<<totalFrames<<endl;
+    // cout<<"input_fps="<<frameRate<<endl;
+    // cap.set(CAP_PROP_FRAME_WIDTH, p.out_width);
+    // cap.set(CAP_PROP_FRAME_HEIGHT, p.out_height);
 
     while (1) {
         cap.read(tempframe);
-        // check if we succeeded
-        if (tempframe.empty()) {
-            cerr << "ERROR! blank frame grabbed\n";
-            break;
-        }
         // imshow("video", tempframe);
         // waitKey(30);
-        cout<<frameimage.cols<<endl;
         pthread_mutex_lock( &m );
             frameimage = tempframe;
         pthread_mutex_unlock( &m );
@@ -348,45 +356,79 @@ void *thread1(void *arg){
 
 int main(int argc, char** argv){
 
-    // pid_t pid;
-    // vector<Params> paramatesList;
+    pid_t pid;
+    vector<Params> paramatesList;
     Params paramates_each;
-
-    Params paramates_1;
-
-    paramates_1.INDEX = "0";
-    paramates_1.in_rtsp = "rtsp://admin:kuangping108@192.168.1.64/h264/ch1/main/av_stream";
-    paramates_1.out_width = 1280;
-    paramates_1.out_height = 720;
-    paramates_1.out_fps = 1;
-    paramates_1.out_port = "10000";
-
-
-    for(int i = 0; i < argc; i++)
-    {
-        puts(argv[i]);
+    if (!boost::filesystem::exists("config.ini")) {
+      std::cerr << "config.ini not exists." << std::endl;
+      return -1;
     }
-    if (argc > 1)
-    {
-    	paramates_1.INDEX = argv[1];
-	    paramates_1.in_rtsp = argv[2];
-	    paramates_1.out_width = atoi(argv[3]);
-	    paramates_1.out_height = atoi(argv[4]);
-	    paramates_1.out_fps = atoi(argv[5]);
-	    paramates_1.out_port = argv[6];
+    boost::property_tree::ptree root_node, tag_system, Camera0;
+    boost::property_tree::ini_parser::read_ini("config.ini", root_node);
+    tag_system = root_node.get_child("System");
+    if(tag_system.count("rtsp_camera") != 1) {
+      std::cerr << "rtsp_camera node not exists." << std::endl;
+      return -1;
+    }
+    int cameras = tag_system.get<int>("rtsp_camera");
+    std::cout << "rtsp_camera: " << cameras << std::endl;
+    int fork_num[cameras] = {};
+    for(int i = 0;  i<cameras; i++){
+      char ca[16] = {0};
+      /* attach the test factory to the /test url */
+
+      sprintf(ca, "Camera%d", i);
+      Camera0 = root_node.get_child(ca);
+      Params paramates_1;
+      paramates_1.INDEX =Camera0.get<string>("INDEX");
+      paramates_1.in_rtsp =  Camera0.get<string>("in_rtsp");
+      paramates_1.out_width =  Camera0.get<int>("out_width");
+      paramates_1.out_height =  Camera0.get<int>("out_height");
+      paramates_1.out_fps = Camera0.get<int>("out_fps");
+      paramates_1.out_port =  Camera0.get<string>("out_port");
+      paramatesList.push_back(paramates_1);
     }
 
-    int rc11, rc21;
-    pthread_t CaptureImageThread1, StreamThread1;
-
-    if( (rc11 = pthread_create(&CaptureImageThread1, NULL, thread1, (void*)&paramates_1)) )
-    cout << "Thread creation failed: " << rc11 << endl;
-    if( (rc21 = pthread_create(&StreamThread1, NULL, thread2new, (void*)&paramates_1)) )
-    cout << "Thread creation failed: " << rc21 << endl;
-
-    pthread_join( CaptureImageThread1, NULL );
-    pthread_join( StreamThread1, NULL );
-
-    cap.release();
+    cout<<"main process,id="<<getpid()<<endl;
+    for (vector<Params>::iterator it = paramatesList.begin(); it != paramatesList.end(); ++it)
+    {
+        paramates_each=*it;
+	      pid = fork();
+        //子进程退出循环，不再创建子进程，全部由主进程创建子进程，这里是关键所在
+        if(pid==0||pid==-1)
+        {
+            break;
+        }
+    }
+    if(pid==-1)
+    {
+        cout<<"fail to fork!"<<endl;
+        exit(1);
+    }
+    else if(pid==0)
+    {
+        //这里写子进程处理逻辑
+        cout<<"this is children process,id="<<getpid()<<", for "<<paramates_each.INDEX<<endl;
+        int rc1, rc2;
+        pthread_t CaptureImageThread, StreamThread;
+        if( (rc1 = pthread_create(&CaptureImageThread, NULL, thread1, (void*)&paramates_each)) )
+        cout << "Thread creation failed: " << rc1 << endl;
+        if( (rc2 = pthread_create(&StreamThread, NULL, thread2new, (void*)&paramates_each)) )
+        cout << "Thread creation failed: " << rc2 << endl;
+        pthread_join( CaptureImageThread, NULL );
+        pthread_join( StreamThread, NULL );
+        // kill(getpid(), 9);
+        // exit(0);
+    }
+    else
+    {
+        //这里主进程处理逻辑
+        pid_t waitpid;
+        int status;
+        printf("parent process : childpid=%d , mypid=%d\n",pid, getpid());
+       waitpid = wait(&status);
+       printf("waitpid:%d\n", waitpid);
+        exit(0);
+    }
     return 0;
 };

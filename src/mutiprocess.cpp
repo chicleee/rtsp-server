@@ -1,4 +1,4 @@
-//compile: g++ -std=c++11 rtsp_new.cpp -o rtsp_new -lpthread -lgstapp-1.0 `pkg-config --libs --cflags opencv gstreamer-1.0 gstreamer-rtsp-server-1.0`
+//compile: g++ -std=c++11 mutiprocess.cpp -o mutiprocess -lpthread -lgstapp-1.0 `pkg-config --libs --cflags opencv gstreamer-1.0 gstreamer-rtsp-server-1.0`
 //view: gst-launch-1.0 rtspsrc location=rtsp://127.0.0.1:8554/test latency=10 ! rtph264depay ! avdec_h264 ! videoconvert ! autovideosink
 //vlc rtsp://127.0.0.1:8554/test
 
@@ -23,11 +23,6 @@
 #include <pthread.h>
 #include <stdlib.h>
 
-//config
-#include <boost/filesystem.hpp>
-#include <boost/filesystem/fstream.hpp>
-#include <boost/property_tree/ini_parser.hpp>
-#include <boost/property_tree/ptree.hpp>
 
 #include <ctime>
 
@@ -44,7 +39,7 @@
 GST_DEBUG_CATEGORY (appsrc_pipeline_debug);
 //GST_DEBUG_CATEGORY (pipeline_debug);
 */
-       
+
 using namespace std;
 using namespace cv;
 
@@ -68,7 +63,7 @@ GstElement *ffmpeg;
 //GstElement *ffmpeg2;
 //GstElement *rtppay, *gdppay;
 GstElement *rtppay;
-GstElement *videoenc; 
+GstElement *videoenc;
 GstElement *videosrc;
 GstElement *sink;
 GstElement *videoscale;
@@ -85,7 +80,7 @@ typedef struct
     int out_width;
     int out_height;
     int out_fps;
-    string out_port;    
+    string out_port;
 } Params;
 
 App s_app;
@@ -102,8 +97,8 @@ typedef struct
 
 int counter = 0;
 
-//两个线程之间共享的帧：  
-Mat frameimage;    
+//两个线程之间共享的帧：
+Mat frameimage;
 
 //"example of frame-processing"
 void processing( Mat frame )
@@ -114,19 +109,19 @@ void processing( Mat frame )
   //cout<<"dynamic rand:"<<dynamic<<endl;
     Rect rect(100+dynamic, 100+dynamic, 400, 400);//左上坐标（x,y）和矩形的长(x)宽(y)
     cv::rectangle(frame, rect, Scalar(255, 0, 0),1, 1, 0);
-    cv::putText(frame, "example of frame-processing", cv::Point(100+dynamic, 100+dynamic), CV_FONT_HERSHEY_PLAIN, 1, cv::Scalar(255, 255, 255));
+    cv::putText(frame, "example of frame-processing", cv::Point(100+dynamic, 100+dynamic), FONT_HERSHEY_PLAIN, 1, cv::Scalar(255, 255, 255));
 }
 
 /*
  将从线程接收到的帧插入缓冲区的函数
  OpenCVthread并将其传递给gstreamer appsrc元素
     @app: 它是指向app结构（包含gstreamer元素）的指针)
-    @return: 返回一个布尔值以指示是否有任何错误 
+    @return: 返回一个布尔值以指示是否有任何错误
 */
 
-static void need_data (GstElement * appsrc, guint unused, MyContext * ctx){  
+static void need_data (GstElement * appsrc, guint unused, MyContext * ctx){
 
-    //cvNamedWindow( "iplimage", CV_WINDOW_AUTOSIZE );
+    //cvNamedWindow( "iplimage", WINDOW_AUTOSIZE );
     //static GstClockTime timestamp = 0;
     GstBuffer *buffer;
     guint buffersize;
@@ -135,7 +130,7 @@ static void need_data (GstElement * appsrc, guint unused, MyContext * ctx){
 
     counter++;
     //m.lock();
-    pthread_mutex_lock( &m ); 
+    pthread_mutex_lock( &m );
 
 
         //resize frames. Speed comparison:INTER_NEAREST、INTER_LINEAR>INTER_CUBIC>INTER_AREA
@@ -148,21 +143,21 @@ static void need_data (GstElement * appsrc, guint unused, MyContext * ctx){
 
 
 
-        /* allocate buffer */ 
+        /* allocate buffer */
         buffersize = frameimage.cols * frameimage.rows * frameimage.channels();
         //cout<<"frameimage.cols:"<<frameimage.cols <<"  frameimage.rows:"<<frameimage.rows << "  frameimage.channels:" << frameimage.channels()<<endl;
         buffer = gst_buffer_new_and_alloc(buffersize);
         uchar *  IMG_data = frameimage.data;
     //m.unlock();
-    pthread_mutex_unlock( &m );    
+    pthread_mutex_unlock( &m );
 
         if (gst_buffer_map (buffer, &info, (GstMapFlags)GST_MAP_WRITE)) {
             memcpy(info.data, IMG_data, buffersize);
             gst_buffer_unmap (buffer, &info);
         }
         else g_print("OPS! ERROR.");
-    
-   
+
+
     ctx->white = !ctx->white;
 
     //increment the timestamp every {duration = 1/outFps} second
@@ -174,14 +169,14 @@ static void need_data (GstElement * appsrc, guint unused, MyContext * ctx){
     //std::cout<<"GST_BUFFER_DURATION (buffer):"<<GST_BUFFER_DURATION (buffer)<<std::endl;
 
     //有足够的数据提供给appsrc：
-    g_signal_emit_by_name (appsrc, "push-buffer", buffer, &ret);     
-    
+    g_signal_emit_by_name (appsrc, "push-buffer", buffer, &ret);
+
     if (ret != GST_FLOW_OK) {
         g_print("ops\n");
         GST_DEBUG ("something wrong in cb_need_data");
         g_main_loop_quit (loop);
     }
-    gst_buffer_unref (buffer);   
+    gst_buffer_unref (buffer);
     std::cout<<"Index:"<<ctx->INDEX<<"  Frame:"<<counter<<std::endl;
 }
 
@@ -201,11 +196,11 @@ static void media_configure(GstRTSPMediaFactory * factory, GstRTSPMedia * media,
 
   /* this instructs appsrc that we will be dealing with timed buffer */
   // g_object_set (G_OBJECT (appsrc), "is-live" , TRUE ,  NULL);
-  // g_object_set (G_OBJECT (appsrc), "min-latency" , 67000000 ,  NULL);  
-  g_object_set (G_OBJECT (appsrc), 
+  // g_object_set (G_OBJECT (appsrc), "min-latency" , 67000000 ,  NULL);
+  g_object_set (G_OBJECT (appsrc),
     "stream-type" , 0 , //rtsp
     "format" , GST_FORMAT_TIME , NULL);
-  
+
 
   g_object_set (G_OBJECT (appsrc), "caps",
       gst_caps_new_simple ("video/x-raw",
@@ -223,11 +218,11 @@ static void media_configure(GstRTSPMediaFactory * factory, GstRTSPMedia * media,
         //"height", G_TYPE_INT, 600,
         "framerate", GST_TYPE_FRACTION, 30, 1,
         "pixel-aspect-ratio", GST_TYPE_FRACTION, 1, 1,
-    NULL);    
+    NULL);
     gst_app_src_set_caps(GST_APP_SRC(appsrc), caps);
     g_object_set (G_OBJECT (appsrc),"stream-type", 0,"format", GST_FORMAT_TIME, NULL);*/
 
-  /* configure the caps of the video 
+  /* configure the caps of the video
   g_object_set (G_OBJECT (appsrc), "caps",
       gst_caps_new_simple ("video/x-raw",
           "format", G_TYPE_STRING, "RGB16",
@@ -242,8 +237,8 @@ static void media_configure(GstRTSPMediaFactory * factory, GstRTSPMedia * media,
   ctx->out_width = p.out_width;
   ctx->out_height = p.out_height;
   ctx->INDEX = p.INDEX;
- 
-  
+
+
   /* make sure ther datais freed when the media is gone */
   g_object_set_data_full (G_OBJECT (media), "my-extra-data", ctx,
       (GDestroyNotify) g_free);
@@ -263,7 +258,7 @@ static void media_configure(GstRTSPMediaFactory * factory, GstRTSPMedia * media,
 void *thread2new(void *arg){
     Params p = *((Params*)arg);
     App * app = &s_app;
-    GstCaps * caps2;  
+    GstCaps * caps2;
     GstCaps * caps3;
     GstFlowReturn ret;
     //GstBus *bus;
@@ -293,14 +288,14 @@ void *thread2new(void *arg){
 /*  gst_rtsp_media_factory_set_launch (factory,
       "( v4l2src ! video/x-raw,width=640,height=480 ! timeoverlay ! tee name=\"local\" ! queue ! autovideosink local. ! queue ! jpegenc ! rtpjpegpay name=pay0 pt=96 )");*/
     char *outAppsrc = new char[200];
-    sprintf(outAppsrc, "( appsrc name=mysrc is-live=true block=true format=GST_FORMAT_TIME caps=video/x-raw,format=BGR,width=%d,height=%d,framerate=%d/1 ! videoconvert ! video/x-raw,format=I420 ! x264enc speed-preset=ultrafast tune=zerolatency ! rtph264pay config-interval=1 name=pay0 pt=96 )", 
+    sprintf(outAppsrc, "( appsrc name=mysrc is-live=true block=true format=GST_FORMAT_TIME caps=video/x-raw,format=BGR,width=%d,height=%d,framerate=%d/1 ! videoconvert ! video/x-raw,format=I420 ! x264enc speed-preset=ultrafast tune=zerolatency ! rtph264pay config-interval=1 name=pay0 pt=96 )",
       int(p.out_width), int(p.out_height), int(p.out_fps));
     gst_rtsp_media_factory_set_launch (factory, outAppsrc);
 
     g_signal_connect (factory, "media-configure", (GCallback) media_configure, (void*)&p);
     //g_signal_connect (app->videosrc, "need-data", G_CALLBACK (start_feed), app);
     //g_signal_connect (app->videosrc, "enough-data", G_CALLBACK (stop_feed),app);
-   
+
     char index_url[16] = {0};
     /* attach the test factory to the /test url */
     sprintf(index_url, "/index/%s", p.INDEX.c_str());
@@ -330,27 +325,27 @@ void *thread1(void *arg){
     if (!cap.isOpened()) {
         throw "Error when reading steam from camera";
     }
-    int width = cap.get(CV_CAP_PROP_FRAME_WIDTH);
-    int height = cap.get(CV_CAP_PROP_FRAME_HEIGHT);
-    int frameRate = cap.get(CV_CAP_PROP_FPS);
-    int totalFrames = cap.get(CV_CAP_PROP_FRAME_COUNT);
+    int width = cap.get(CAP_PROP_FRAME_WIDTH);
+    int height = cap.get(CAP_PROP_FRAME_HEIGHT);
+    int frameRate = cap.get(CAP_PROP_FPS);
+    int totalFrames = cap.get(CAP_PROP_FRAME_COUNT);
 
     cout<<"input_width="<<width<<endl;
     cout<<"input_width="<<height<<endl;
     cout<<"input_total_frames="<<totalFrames<<endl;
     cout<<"input_fps="<<frameRate<<endl;
-    // cap.set(CV_CAP_PROP_FRAME_WIDTH, p.out_width);
-    // cap.set(CV_CAP_PROP_FRAME_HEIGHT, p.out_height);
+    // cap.set(CAP_PROP_FRAME_WIDTH, p.out_width);
+    // cap.set(CAP_PROP_FRAME_HEIGHT, p.out_height);
 
     while (1) {
         cap.read(tempframe);
         // imshow("video", tempframe);
         // waitKey(30);
-        pthread_mutex_lock( &m ); 
+        pthread_mutex_lock( &m );
             frameimage = tempframe;
         pthread_mutex_unlock( &m );
     }
-    pthread_exit(NULL);    
+    pthread_exit(NULL);
 }
 
 int main(int argc, char** argv){
@@ -366,15 +361,15 @@ int main(int argc, char** argv){
     paramates_1.out_width = 1280;
     paramates_1.out_height = 720;
     paramates_1.out_fps = 1;
-    paramates_1.out_port = "8554";
-    
+    paramates_1.out_port = "85541";
+
     Params paramates_2;
 
     paramates_2.out_width = 1280;
     paramates_2.out_height = 720;
     paramates_2.out_fps = 5;
     paramates_2.in_rtsp = "rtsp://admin:kuangping108@192.168.1.64/h264/ch1/main/av_stream";
-    paramates_2.out_port = "8555";
+    paramates_2.out_port = "85551";
     paramates_2.INDEX = "0";
 
     Params paramates_3;
@@ -383,7 +378,7 @@ int main(int argc, char** argv){
     paramates_3.out_height = 720;
     paramates_3.out_fps = 5;
     paramates_3.in_rtsp = "rtsp://admin:kuangping108@192.168.1.64/h264/ch1/main/av_stream";
-    paramates_3.out_port = "8556";
+    paramates_3.out_port = "85561";
     paramates_3.INDEX = "0";
 
     Params paramates_4;
@@ -392,7 +387,7 @@ int main(int argc, char** argv){
     paramates_4.out_height = 720;
     paramates_4.out_fps = 5;
     paramates_4.in_rtsp = "rtsp://admin:kuangping108@192.168.1.64/h264/ch1/main/av_stream";
-    paramates_4.out_port = "8557";
+    paramates_4.out_port = "85571";
     paramates_4.INDEX = "0";
 
     Params paramates_5;
@@ -401,7 +396,7 @@ int main(int argc, char** argv){
     paramates_5.out_height = 720;
     paramates_5.out_fps = 5;
     paramates_5.in_rtsp = "rtsp://admin:kuangping108@192.168.1.64/h264/ch1/main/av_stream";
-    paramates_5.out_port = "8558";
+    paramates_5.out_port = "85581";
     paramates_5.INDEX = "0";
 
     Params paramates_6;
@@ -410,18 +405,18 @@ int main(int argc, char** argv){
     paramates_6.out_height = 720;
     paramates_6.out_fps = 5;
     paramates_6.in_rtsp = "rtsp://admin:kuangping108@192.168.1.64/h264/ch1/main/av_stream";
-    paramates_6.out_port = "8559";
+    paramates_6.out_port = "85591";
     paramates_6.INDEX = "0";
 
     paramatesList.push_back(paramates_1);
-    // paramatesList.push_back(paramates_2);
-    // paramatesList.push_back(paramates_3);
-    // paramatesList.push_back(paramates_4);
-    // paramatesList.push_back(paramates_5);
-    // paramatesList.push_back(paramates_6);
-	
+    paramatesList.push_back(paramates_2);
+    paramatesList.push_back(paramates_3);
+    paramatesList.push_back(paramates_4);
+    paramatesList.push_back(paramates_5);
+    paramatesList.push_back(paramates_6);
 
-    
+
+
     cout<<"main process,id="<<getpid()<<endl;
 
     for (vector<Params>::iterator it = paramatesList.begin(); it != paramatesList.end(); ++it)
@@ -443,7 +438,7 @@ int main(int argc, char** argv){
     {
         //这里写子进程处理逻辑
         cout<<"this is children process,id="<<getpid()<<", for "<<paramates_each.INDEX<<endl;
-        
+
 
         int rc1, rc2;
         pthread_t CaptureImageThread, StreamThread;
