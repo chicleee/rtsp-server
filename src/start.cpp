@@ -1,4 +1,4 @@
-//compile: g++ -std=c++11 start.cpp -o mutiprocess -lboost_system -lboost_filesystem -lpthread -lgstapp-1.0 `pkg-config --libs --cflags opencv gstreamer-1.0 gstreamer-rtsp-server-1.0`
+//compile: g++ -std=c++11 start.cpp -o start -lboost_system -lboost_filesystem -lpthread -lgstapp-1.0 `pkg-config --libs --cflags opencv gstreamer-1.0 gstreamer-rtsp-server-1.0`
 //view: gst-launch-1.0 rtspsrc location=rtsp://127.0.0.1:8554/test latency=10 ! rtph264depay ! avdec_h264 ! videoconvert ! autovideosink
 //vlc rtsp://127.0.0.1:8554/test
 
