@@ -363,7 +363,7 @@ void *thread1(void *arg){
     // cap.set(CAP_PROP_FRAME_WIDTH, p.out_width);
     // cap.set(CAP_PROP_FRAME_HEIGHT, p.out_height);
     // cv::Mat temp_frame;
-    for (;;)
+    for ()
     {
         if (!d_reader->nextFrame(d_frame))
             break;
